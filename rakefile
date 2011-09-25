@@ -4,8 +4,8 @@ CABAL = "quick-version.cabal"
 CFG   = 'dist/setup-config'
 
 APP  = "dist/build/quickver/quickver"
-SRC  = FileList['src/**/*.hs', 'benchmark/**/*.hs']
-OBJ  = FileList['src/**/*.hi', 'benchmark/**/*.hi', 'src/**/*.o', 'benchmark/**/*.o']
+SRC  = FileList['src/**/*.hs']
+OBJ  = FileList['src/**/*.hi', 'src/**/*.o']
 
 
 ########################################################################
