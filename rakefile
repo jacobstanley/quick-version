@@ -1,0 +1,47 @@
+Dir.chdir File.dirname(__FILE__)
+
+CABAL = "quick-version.cabal"
+CFG   = 'dist/setup-config'
+
+APP  = "dist/build/quickver/quickver"
+SRC  = FileList['src/**/*.hs', 'benchmark/**/*.hs']
+OBJ  = FileList['src/**/*.hi', 'benchmark/**/*.hi', 'src/**/*.o', 'benchmark/**/*.o']
+
+
+########################################################################
+# Build
+
+task :default => :build
+
+task :deps do
+  sh 'cabal update'
+  sh 'cabal install -fbench --only-dependencies'
+end
+
+task :clean do
+  sh 'cabal clean'
+  rm_rf OBJ
+  rm_rf "#{APP}*"
+end
+
+file CFG => CABAL do
+  rm_rf CFG
+  sh "cabal configure"
+end
+
+file APP => SRC + [CFG] do
+  sh 'cabal build'
+end
+
+task :build => APP
+
+task :docs => CFG do
+  system 'cabal haddock --executables'
+
+  index = FileList['dist/doc/html/**/index.html'][0]
+  system "xdg-open #{index}"
+end
+
+task :run, :path, :needs => :build do |_, args|
+  system APP, args[:path]
+end
