@@ -1,0 +1,22 @@
+
+* List all functions in a package, and their types
+
+* List the subset of those functions for which all inputs
+have an Arbitrary instance
+
+* Generate a list of arbitrary inputs to those functions
+
+* Record the outputs
+
+* For each function, create a hash of type++inputs++outputs
+
+* Hash the list of all function hashes as the API hash
+
+The list of exported function hashes is the API.
+
+For a revdep, it can be determined what subset of the full API is
+required, so whether a future version breaks compat can be determined.
+
+Storing a history of all API hashes, including all function inputs used,
+can be used to determine version dependency bounds in revdeps, and
+version age (non-breaking additions) numbers.
