@@ -1,5 +1,5 @@
 name:        quick-version
-version:     0.1
+version:     0.1.0.0
 synopsis:    Summarises a package's semantics using QuickCheck to test its functions.
 description: Summarises a package's semantics using QuickCheck to test its functions.
 

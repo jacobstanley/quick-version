@@ -1,0 +1,9 @@
+QuickVersion
+
+quick-version is a tool for generating and comparing Haskell library API
+fingerprints.
+
+The goal is to provide automatic discovery of API changes between package
+versions. A hash is generated for every visible function and type, and
+this list of hashes can be used to automatically check compatibility of a
+reverse-dependency against the subset of the API which is actually used.
