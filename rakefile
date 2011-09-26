@@ -15,7 +15,7 @@ task :default => :build
 
 task :deps do
   sh 'cabal update'
-  sh 'cabal install -fbench --only-dependencies'
+  sh 'cabal install --only-dependencies'
 end
 
 task :clean do
