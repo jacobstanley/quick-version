@@ -1,39 +1,92 @@
-module Main (main) where
+{-# LANGUAGE ParallelListComp #-}
 
+module Main where
+
+import Data.Maybe (catMaybes, mapMaybe)
+import Prelude hiding (mod)
+import System.Environment (getArgs)
+
+-- GHC API
 import qualified DynFlags as G
-import           Data.Maybe (catMaybes)
 import qualified DataCon as G
-import qualified GHC as G
 import           GHC.Paths (libdir)
+import qualified GHC as G
+import qualified Module as G
 import qualified Outputable as G
+import qualified Packages as G
 import qualified TyCon as G
 import qualified Var as G
 
+------------------------------------------------------------------------
+
 main :: IO ()
 main = do
-   res <- example
-   mapM_ (putStrLn . G.showSDoc . G.ppr) res
+    args <- getArgs
+    mapM_ (showExports . G.stringToPackageId) args
 
-example :: IO [G.Type]
-example =
+------------------------------------------------------------------------
+
+showExports :: G.PackageId -> IO ()
+showExports pkgId = do
+    putStrLn pkgName
+    putStrLn $ replicate (length pkgName) '='
+
+    xs <- withGhc $ do
+        mods  <- getModules pkgId
+        infos <- mapM G.getModuleInfo mods
+        mapM exports $ catMaybes infos
+
+    mapM_ (putStrLn . G.showSDoc . G.ppr) xs
+  where
+    pkgName = G.packageIdString pkgId
+
+------------------------------------------------------------------------
+
+withGhc :: G.Ghc a -> IO a
+withGhc ghc =
     G.defaultErrorHandler G.defaultLogAction $ do
     G.runGhc (Just libdir) $ do
-        dflags <- G.getSessionDynFlags
-        G.setSessionDynFlags dflags
-        target <- G.guessTarget "examples/A.hs" Nothing
-        G.setTargets [target]
-        G.load G.LoadAllTargets
+        G.getSessionDynFlags >>= G.setSessionDynFlags
+        ghc
 
-        m <- G.findModule (G.mkModuleName "A") Nothing
-        (Just info) <- G.getModuleInfo m
+------------------------------------------------------------------------
 
-        exports <- mapM (G.lookupName) (G.modInfoExports info)
+getModules :: G.GhcMonad m => G.PackageId -> m [G.Module]
+getModules pkgId = do
+    flags <- G.getSessionDynFlags
+    return $ lookupModules pkgId $ G.pkgState flags
 
-        return $ map extractType $ catMaybes exports
+lookupModules :: G.PackageId -> G.PackageState -> [G.Module]
+lookupModules pkgId pkgState = mods
+  where
+    pkgs = G.pkgIdMap pkgState
+    pkg  = lookupPackage pkgId pkgs
+    mods = map (G.mkModule $ G.packageConfigId pkg) (G.exposedModules pkg)
 
-extractType :: G.TyThing -> G.Type
-extractType (G.AnId var)      = G.varType var
-extractType (G.ATyCon tycon)  = G.tyConKind tycon
-extractType (G.ADataCon dcon) = G.dataConRepType dcon
-extractType (G.ACoAxiom _)    = error "extractType: ACoAxiom"
-extractType (G.AClass _)      = error "extractType: AClass"
+lookupPackage :: G.PackageId -> G.PackageConfigMap -> G.PackageConfig
+lookupPackage pkgId pkgs =
+  case G.lookupPackage pkgs pkgId of
+    Just pkg -> pkg
+    Nothing  -> error $ "lookupModules: could not find " ++ G.packageIdString pkgId
+
+------------------------------------------------------------------------
+
+exports :: G.GhcMonad m => G.ModuleInfo -> m [(G.Name, G.Type)]
+exports info = do
+    tyThings <- mapM G.lookupName (G.modInfoExports info)
+
+    let names = map (fmap G.getName) tyThings
+        types = map (>>= extractType) tyThings
+
+    return $ mapMaybe promote $ zip names types
+  where
+    promote :: (Maybe G.Name, Maybe G.Type) -> Maybe (G.Name, G.Type)
+    promote (Just n, Just t) = Just (n, t)
+    promote (_, _)           = Nothing
+
+    extractType :: G.TyThing -> Maybe G.Type
+    extractType (G.AnId var)      = Just (G.varType var)
+    extractType (G.ATyCon tycon)  = Just (G.tyConKind tycon)
+    extractType (G.ADataCon dcon) = Just (G.dataConRepType dcon)
+    extractType (G.ACoAxiom _)    = Nothing
+    extractType (G.AClass _)      = Nothing
