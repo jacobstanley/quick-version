@@ -1,8 +1,6 @@
-{-# LANGUAGE ParallelListComp #-}
-
 module Main where
 
-import Data.Maybe (catMaybes, mapMaybe)
+import Data.Maybe (catMaybes, mapMaybe, fromMaybe)
 import Prelude hiding (mod)
 import System.Environment (getArgs)
 
@@ -44,7 +42,7 @@ showExports pkgId = do
 
 withGhc :: G.Ghc a -> IO a
 withGhc ghc =
-    G.defaultErrorHandler G.defaultLogAction $ do
+    G.defaultErrorHandler G.defaultLogAction $
     G.runGhc (Just libdir) $ do
         G.getSessionDynFlags >>= G.setSessionDynFlags
         ghc
@@ -65,9 +63,9 @@ lookupModules pkgId pkgState = mods
 
 lookupPackage :: G.PackageId -> G.PackageConfigMap -> G.PackageConfig
 lookupPackage pkgId pkgs =
-  case G.lookupPackage pkgs pkgId of
-    Just pkg -> pkg
-    Nothing  -> error $ "lookupModules: could not find " ++ G.packageIdString pkgId
+    fromMaybe (error msg) (G.lookupPackage pkgs pkgId)
+  where
+    msg = "lookupModules: could not find " ++ G.packageIdString pkgId
 
 ------------------------------------------------------------------------
 
