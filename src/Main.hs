@@ -1,6 +1,7 @@
 module Main where
 
-import Data.Maybe (catMaybes, mapMaybe, fromMaybe)
+import Data.Maybe (mapMaybe, fromMaybe)
+import Data.List (intercalate)
 import Prelude hiding (mod)
 import System.Environment (getArgs)
 
@@ -20,37 +21,66 @@ import qualified Var as G
 main :: IO ()
 main = do
     args <- getArgs
-    mapM_ (showExports . G.stringToPackageId) args
+    mapM_ (printPackageExports . G.stringToPackageId) args
 
 ------------------------------------------------------------------------
 
-showExports :: G.PackageId -> IO ()
-showExports pkgId = do
-    putStrLn pkgName
-    putStrLn $ replicate (length pkgName) '='
+type Name = String
+type Type = String
 
-    xs <- withGhc $ do
-        mods  <- getModules pkgId
-        infos <- mapM G.getModuleInfo mods
-        mapM exports $ catMaybes infos
+data Package = Package Name [Module]
+    deriving (Show, Eq, Ord)
 
-    mapM_ (putStrLn . G.showSDoc . G.ppr) xs
+data Module = Module Name [Export]
+    deriving (Show, Eq, Ord)
+
+data Export = Export Name Type
+    deriving (Show, Eq, Ord)
+
+------------------------------------------------------------------------
+
+printPackageExports :: G.PackageId -> IO ()
+printPackageExports pkgId = do
+    p <- withGhc (getPackage pkgId)
+    putStrLn (showPackage p)
+
+showPackage :: Package -> String
+showPackage (Package n ms) = intercalate "\n" $ n : map showModule ms
+
+showModule :: Module -> String
+showModule (Module n xs) = intercalate "\n" $ (n ++ "\n") : map showExport xs
+
+showExport :: Export -> String
+showExport (Export n t) = indent $ n ++ " :: " ++ t
+  where
+    indent = unlines . map ("    " ++) . lines
+
+------------------------------------------------------------------------
+
+getPackage :: G.GhcMonad m => G.PackageId -> m Package
+getPackage pkgId = do
+    mods  <- getPackageModules pkgId
+    infos <- mapM moduleExports mods
+
+    return $ Package pkgName $ zipWith mkModule mods infos
   where
     pkgName = G.packageIdString pkgId
+    modName = G.moduleNameString . G.moduleName
+
+    mkModule mod exps = Module (modName mod) (map mkExport exps)
+    mkExport (nam, typ)  = Export (showUnqual nam) (showQual typ)
+
+    moduleExports :: G.GhcMonad m => G.Module -> m [(G.Name, G.Type)]
+    moduleExports mod = do
+        minfo <- G.getModuleInfo mod
+        case minfo of
+            Nothing   -> return []
+            Just info -> getModuleExports info
 
 ------------------------------------------------------------------------
 
-withGhc :: G.Ghc a -> IO a
-withGhc ghc =
-    G.defaultErrorHandler G.defaultLogAction $
-    G.runGhc (Just libdir) $ do
-        G.getSessionDynFlags >>= G.setSessionDynFlags
-        ghc
-
-------------------------------------------------------------------------
-
-getModules :: G.GhcMonad m => G.PackageId -> m [G.Module]
-getModules pkgId = do
+getPackageModules :: G.GhcMonad m => G.PackageId -> m [G.Module]
+getPackageModules pkgId = do
     flags <- G.getSessionDynFlags
     return $ lookupModules pkgId $ G.pkgState flags
 
@@ -69,22 +99,37 @@ lookupPackage pkgId pkgs =
 
 ------------------------------------------------------------------------
 
-exports :: G.GhcMonad m => G.ModuleInfo -> m [(G.Name, G.Type)]
-exports info = do
+getModuleExports :: G.GhcMonad m => G.ModuleInfo -> m [(G.Name, G.Type)]
+getModuleExports info = do
     tyThings <- mapM G.lookupName (G.modInfoExports info)
 
     let names = map (fmap G.getName) tyThings
         types = map (>>= extractType) tyThings
 
-    return $ mapMaybe promote $ zip names types
+    return $ mapMaybe promoteMaybe $ zip names types
   where
-    promote :: (Maybe G.Name, Maybe G.Type) -> Maybe (G.Name, G.Type)
-    promote (Just n, Just t) = Just (n, t)
-    promote (_, _)           = Nothing
-
     extractType :: G.TyThing -> Maybe G.Type
     extractType (G.AnId var)      = Just (G.varType var)
     extractType (G.ATyCon tycon)  = Just (G.tyConKind tycon)
     extractType (G.ADataCon dcon) = Just (G.dataConRepType dcon)
     extractType (G.ACoAxiom _)    = Nothing
     extractType (G.AClass _)      = Nothing
+
+------------------------------------------------------------------------
+
+withGhc :: G.Ghc a -> IO a
+withGhc ghc =
+    G.defaultErrorHandler G.defaultLogAction $
+    G.runGhc (Just libdir) $ do
+        G.getSessionDynFlags >>= G.setSessionDynFlags
+        ghc
+
+showQual :: G.Outputable a => a -> String
+showQual = G.showSDoc . G.ppr
+
+showUnqual :: G.Outputable a => a -> String
+showUnqual = G.showSDocUnqual . G.ppr
+
+promoteMaybe :: (Maybe a, Maybe b) -> Maybe (a, b)
+promoteMaybe (Just x, Just y) = Just (x, y)
+promoteMaybe (_, _)           = Nothing
